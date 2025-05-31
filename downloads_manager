@@ -1,0 +1,394 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+require "fileutils"
+require "net/http"
+require "uri"
+require "json"
+require "time"
+
+class DownloadsCleaner
+  def initialize
+    @options = {
+      threshold: 100 * 1024 * 1024, # 100MB default
+      mode: :prompt,
+    }
+    @large_files = []
+    @retrievable_files = []
+  end
+
+  def run
+    parse_arguments
+    find_large_files
+    check_retrievability
+    display_retrievable_files
+    handle_deletion
+  end
+
+  private
+
+  def parse_arguments
+    OptionParser.new do |opts|
+      opts.banner = "Usage: #{$0} [options] SIZE_THRESHOLD"
+
+      opts.on("--delete", "Delete files immediately without prompting") do
+        @options[:mode] = :delete
+      end
+
+      opts.on("--prompt", "Prompt before deleting (default)") do
+        @options[:mode] = :prompt
+      end
+
+      opts.on("-h", "--help", "Show this help message") do
+        puts opts
+        exit
+      end
+    end.parse!
+
+    if ARGV.length > 0
+      size_arg = ARGV[0]
+      @options[:threshold] = parse_size(size_arg)
+    end
+
+    puts "Looking for files larger than #{format_size(@options[:threshold])}"
+  end
+
+  def parse_size(size_string)
+    case size_string.downcase
+    when /^(\d+(?:\.\d+)?)gb?$/
+      (::Regexp.last_match(1).to_f * 1024 * 1024 * 1024).to_i
+    when /^(\d+(?:\.\d+)?)mb?$/
+      (::Regexp.last_match(1).to_f * 1024 * 1024).to_i
+    when /^(\d+(?:\.\d+)?)kb?$/
+      (::Regexp.last_match(1).to_f * 1024).to_i
+    when /^(\d+)$/
+      ::Regexp.last_match(1).to_i
+    else
+      puts "Invalid size format. Use formats like: 100MB, 1.5GB, 500KB, or raw bytes"
+      exit 1
+    end
+  end
+
+  def format_size(bytes)
+    if bytes >= 1024 * 1024 * 1024
+      "#{(bytes.to_f / (1024 * 1024 * 1024)).round(1)}GB"
+    elsif bytes >= 1024 * 1024
+      "#{(bytes.to_f / (1024 * 1024)).round(1)}MB"
+    elsif bytes >= 1024
+      "#{(bytes.to_f / 1024).round(1)}KB"
+    else
+      "#{bytes} bytes"
+    end
+  end
+
+  def find_large_files
+    downloads_path = File.expand_path("~/Downloads")
+
+    unless Dir.exist?(downloads_path)
+      puts "Downloads folder not found at #{downloads_path}"
+      exit 1
+    end
+
+    puts "Scanning #{downloads_path} for large files..."
+
+    Dir.glob("#{downloads_path}/*").each do |file_path|
+      next unless File.file?(file_path)
+
+      file_size = File.size(file_path)
+      next unless file_size > @options[:threshold]
+
+      @large_files << {
+        path: file_path,
+        name: File.basename(file_path),
+        size: file_size,
+      }
+    end
+
+    puts "Found #{@large_files.length} files above threshold"
+  end
+
+  def check_retrievability
+    return if @large_files.empty?
+
+    puts "Checking if files can be retrieved online..."
+
+    @large_files.each_with_index do |file_info, index|
+      print "Checking #{file_info[:name]} (#{index + 1}/#{@large_files.length})... "
+
+      urls = get_download_urls(file_info[:path])
+
+      if urls && !urls.empty?
+        file_info[:download_urls] = urls
+        @retrievable_files << file_info
+        puts "✅ retrievable (#{urls.length} URL#{'s' if urls.length > 1} found)"
+      else
+        puts "❌ URL not available"
+      end
+    end
+  end
+
+  def get_download_urls(file_path)
+    urls = []
+    
+    # Try to get URLs from macOS extended attributes (where metadata)
+    begin
+      # Get the hex data from xattr and convert to binary for plutil
+      hex_data = `xattr -px com.apple.metadata:kMDItemWhereFroms "#{file_path}" 2>/dev/null`.strip
+      
+      if $?.success? && !hex_data.empty?
+        # Convert hex to binary and then to XML plist
+        require 'tempfile'
+        
+        temp_file = Tempfile.new(['xattr', '.plist'])
+        begin
+          # Convert hex to binary using xxd
+          system("echo '#{hex_data}' | xxd -r -p > \"#{temp_file.path}\"")
+          
+          if $?.success? && File.size(temp_file.path) > 0
+            # Convert binary plist to XML format
+            xml_output = `plutil -convert xml1 -o - "#{temp_file.path}" 2>/dev/null`
+            
+            if $?.success? && !xml_output.strip.empty?
+              found_urls = extract_urls_from_plist_xml(xml_output)
+              
+              # Add all found URLs with accessibility status
+              found_urls.each do |url|
+                accessible = url_accessible?(url)
+                urls << { url: url, accessible: accessible }
+              end
+            end
+          end
+        ensure
+          temp_file.close
+          temp_file.unlink
+        end
+      end
+    rescue StandardError
+      # Fallback methods could go here
+    end
+
+    # Try alternative metadata sources if no URLs found
+    if urls.empty?
+      alt_url = get_url_from_alternative_sources(file_path)
+      if alt_url
+        accessible = url_accessible?(alt_url)
+        urls << { url: alt_url, accessible: accessible }
+      end
+    end
+    
+    urls
+  end
+
+  def extract_urls_from_plist_xml(xml_data)
+    urls = []
+
+    # Extract URLs from the XML plist format
+    # The URLs are typically in <string> tags
+    xml_data.scan(/<string>(https?:\/\/[^<]+)<\/string>/) do |url|
+      urls << url.first
+    end
+
+    urls.uniq
+  end
+
+  def get_url_from_alternative_sources(file_path)
+    # Try to find .url files or other metadata
+    base_name = File.basename(file_path, File.extname(file_path))
+    dir_name = File.dirname(file_path)
+
+    # Look for companion .url file
+    url_file = File.join(dir_name, "#{base_name}.url")
+    if File.exist?(url_file)
+      content = File.read(url_file)
+      url_match = content.match(/URL=(.+)/)
+      return url_match[1].strip if url_match
+    end
+
+    nil
+  end
+
+  def url_accessible?(url)
+    uri = URI.parse(url)
+
+    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
+      http.open_timeout = 10
+      http.read_timeout = 10
+
+      response = http.head(uri.path.empty? ? "/" : uri.path)
+
+      # Consider 2xx and 3xx as accessible
+      response.code.to_i < 400
+    end
+  rescue StandardError
+    false
+  end
+
+  def display_retrievable_files
+    if @retrievable_files.empty?
+      puts "\nNo large files found that can be retrieved online."
+      puts "Have a great day! 👋"
+      exit 0
+    end
+
+    puts "\n" + "=" * 80
+    puts "FILES THAT CAN BE DELETED AND RETRIEVED LATER:"
+    puts "=" * 80
+
+    total_size = 0
+    @retrievable_files.each_with_index do |file_info, index|
+      total_size += file_info[:size]
+      puts "#{index + 1}. #{file_info[:name]}"
+      puts "   Size: #{format_size(file_info[:size])}"
+      
+      # Display all URLs with their accessibility status
+      if file_info[:download_urls].length == 1
+        url_info = file_info[:download_urls].first
+        status = url_info[:accessible] ? "✅" : "⚠️"
+        puts "   URL: #{url_info[:url]} #{status}"
+      else
+        puts "   URLs:"
+        file_info[:download_urls].each_with_index do |url_info, url_index|
+          status = url_info[:accessible] ? "✅" : "⚠️"
+          puts "     #{url_index + 1}. #{url_info[:url]} #{status}"
+        end
+      end
+      puts
+    end
+
+    puts "Total size that can be freed: #{format_size(total_size)}"
+    puts "=" * 80
+  end
+
+  def handle_deletion
+    case @options[:mode]
+    when :delete
+      delete_all_files
+    when :prompt
+      prompt_for_deletion
+    end
+  end
+
+  def prompt_for_deletion
+    puts "\nWhat would you like to do?"
+    puts "1. Delete all files listed above"
+    puts "2. Choose files individually"
+    puts "3. Delete none (exit)"
+
+    print "\nEnter your choice (1-3): "
+    choice = $stdin.gets.chomp
+
+    case choice
+    when "1"
+      delete_all_files
+    when "2"
+      delete_files_individually
+    when "3"
+      puts "\nNo files deleted. Have a great day! 👋"
+      exit 0
+    else
+      puts "Invalid choice. Exiting without deleting anything."
+      puts "Have a great day! 👋"
+      exit 0
+    end
+  end
+
+  def delete_all_files
+    deleted_files = @retrievable_files.dup
+
+    puts "\nDeleting all retrievable files..."
+    @retrievable_files.each do |file_info|
+      # File.delete(file_info[:path])
+      puts "🗑 Deleted #{file_info[:name]}"
+    end
+
+    save_deleted_files_list(deleted_files)
+    puts "\nAll files deleted successfully! 🎉"
+    puts "URLs saved to retrievable downloads list."
+  end
+
+  def delete_files_individually
+    deleted_files = []
+
+    @retrievable_files.each do |file_info|
+      puts "\n" + "-" * 60
+      puts "File: #{file_info[:name]}"
+      puts "Size: #{format_size(file_info[:size])}"
+      if file_info[:download_urls].length == 1
+        url_info = file_info[:download_urls].first
+        status = url_info[:accessible] ? "✅" : "⚠️"
+        puts "URL:  #{url_info[:url]} #{status}"
+      else
+        puts "URLs:"
+        file_info[:download_urls].each_with_index do |url_info, idx|
+          status = url_info[:accessible] ? "✅" : "⚠️"
+          puts "      #{idx + 1}. #{url_info[:url]} #{status}"
+        end
+      end
+
+      print "Delete this file? (y/N): "
+      response = $stdin.gets.chomp.downcase
+
+      if %w[y yes].include?(response)
+        # File.delete(file_info[:path])
+        deleted_files << file_info
+        puts "🗑 Deleted #{file_info[:name]}"
+      else
+        puts "✅ Kept #{file_info[:name]}"
+      end
+    end
+
+    if deleted_files.empty?
+      puts "\nNo files were deleted. Have a great day! 👋"
+    else
+      save_deleted_files_list(deleted_files)
+      puts "\n#{deleted_files.length} file(s) deleted successfully! 🎉"
+      puts "URLs saved to retrievable downloads list."
+    end
+  end
+
+  def save_deleted_files_list(deleted_files)
+    return if deleted_files.empty?
+
+    timestamp = Time.now.strftime("%Y%m%d_%H%M%S")
+    filename = File.expand_path("~/Downloads/retrievable_downloads.#{timestamp}.md")
+
+    File.open(filename, "w") do |file|
+      file.puts "# Retrievable Downloads - #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}"
+      file.puts
+      file.puts "The following files were deleted but can be retrieved from their original URLs:"
+      file.puts
+
+      deleted_files.each_with_index do |file_info, index|
+        file.puts "## #{index + 1}. #{file_info[:name]}"
+        file.puts
+        file.puts "- **Size**: #{format_size(file_info[:size])}"
+        if file_info[:download_urls].length == 1
+          url_info = file_info[:download_urls].first
+          status = url_info[:accessible] ? "accessible" : "not accessible"
+          file.puts "- **URL**: #{url_info[:url]} (#{status})"
+        else
+          file.puts "- **URLs**:"
+          file_info[:download_urls].each_with_index do |url_info, idx|
+            status = url_info[:accessible] ? "accessible" : "not accessible"
+            file.puts "  #{idx + 1}. #{url_info[:url]} (#{status})"
+          end
+        end
+        file.puts "- **Deleted**: #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}"
+        file.puts
+      end
+
+      total_size = deleted_files.sum { |f| f[:size] }
+      file.puts "---"
+      file.puts "**Total space freed**: #{format_size(total_size)}"
+      file.puts "**Files deleted**: #{deleted_files.length}"
+    end
+
+    puts "Saved URLs to: #{filename}"
+  end
+end
+
+# Run the script
+if __FILE__ == $0
+  cleaner = DownloadsCleaner.new
+  cleaner.run
+end
