@@ -1,0 +1,20 @@
+I want to add:
+
+1. the ability to save the deleted file data to a SQLite database stored at ${CLEANER_HOME:-$HOME/.config/downloads_cleaner}/files.db
+2. a configuration file at ${CLEANER_HOME:-$HOME/.config/downloads_cleaner}/config.yaml allowing the user to specify
+   - the database file name,
+   - the download directory, and
+   - the default file size threshold
+3. the ability to replace downloaded files with a link that will download the file again, and configuration of
+   - whether to enable this feature
+   - whether to delete the link after completing the download
+   - whether to disable the use of the database (as the link could be sufficient for some people)
+4. the ability to compress files, especially if they cannot be downloaded again, with
+   - a `--compress` flag: `--compress=all`, `--compress=none`, `--compress=auto` ("auto" means only when not downloadable)
+   - the ability to set any compression options as defaults
+   - the ability to choose compression algorithm used
+5. the ability to upload non-downloadable files to a remote location, with
+   - a `--upload` flag: `--upload=all`, `--upload=none`, `--upload=auto` ("auto" means only when not downloadable)
+   - the ability to set any upload options as defaults
+   - the ability to choose the upload destination
+   - the ability to choose between `sftp://`, `ssh://`, `rsync://`, `scp://`
