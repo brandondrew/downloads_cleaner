@@ -1,0 +1,16 @@
+Initial prompt:
+
+I want a Ruby script that can
+
+- accept an argument for the file size threshold
+- accept an argument to specify whether to delete immediately without prompting (--delete) or else prompt (--prompt, the default)
+- read through the items in my ~/Downloads folder
+- add them to a list if they are above the specified size threshold
+- get the download URL from the metadata for the item
+- check (with a HEAD request, I think) whether the item is still available online at that URL
+- display a list of things that can be deleted and still retrieved later
+- unless --delete was chosen, ask if they should all be deleted, or none of them deleted, or some of them deleted
+- if --delete was chosen when invoked, or if deleting all was chosen, then delete all of those files above a certain size that can be retrieved, saving the list of URLs in ~/Downloads/retrievable_downloads.<timestamp>.md
+- if only some files are chosen to be deleted, then prompt the user for each file one by one, saving those deleted in ~/Downloads/retrievable_downloads.<timestamp>.md
+- if none are chosen, then exit with a friendly salutation
+
