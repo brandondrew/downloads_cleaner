@@ -1,0 +1,46 @@
+I want to restructure the downloads_manager so that
+
+- the executable is small and does not need an `rb` extension
+- the bulk of the code can be required by tests, which expect an `rb` extension for the `require_relative` call
+- the whole thing can be distributed and installed as a gem
+
+I also want to rename it to downloads_cleaner, since that is a clearer name, and is in keeping with the class name used in the code itself.
+
+
+The executable could (for example) be as simple as this (unless you have better ideas):
+
+```
+#!/usr/bin/env ruby
+
+require_relative "../lib/downloads_cleaner"
+
+if __FILE__ == $0
+  cleaner = DownloadsCleaner.new
+  cleaner.run
+end
+```
+
+The file required from lib could be as simple as this (unless you have better ideas, again):
+
+```
+# Main entry point for the Downloads Manager gem
+module DownloadsManager
+  VERSION = "0.1.0"
+end
+
+require "optparse"
+require "fileutils"
+require "net/http"
+require "uri"
+require "json"
+require "time"
+require "tempfile"
+
+require_relative "downloads_manager/version"
+require_relative "downloads_manager/file_size_formatter"
+require_relative "downloads_manager/file_system"
+require_relative "downloads_manager/url_checker"
+require_relative "downloads_manager/downloads_cleaner"
+```
+
+In addition to refactoring the code into separate files, I expect you to create a gemspec, and anything else needed by a gem.
