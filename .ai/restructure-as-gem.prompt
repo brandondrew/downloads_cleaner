@@ -36,11 +36,11 @@ require "json"
 require "time"
 require "tempfile"
 
-require_relative "downloads_manager/version"
-require_relative "downloads_manager/file_size_formatter"
-require_relative "downloads_manager/file_system"
-require_relative "downloads_manager/url_checker"
-require_relative "downloads_manager/downloads_cleaner"
+require_relative "downloads_cleaner/version"
+require_relative "downloads_cleaner/file_size_formatter"
+require_relative "downloads_cleaner/file_system"
+require_relative "downloads_cleaner/url_checker"
+require_relative "downloads_cleaner/downloads_cleaner"
 ```
 
 In addition to refactoring the code into separate files, I expect you to create a gemspec, and anything else needed by a gem.

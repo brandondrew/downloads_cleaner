@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../downloads_manager'
+require_relative "../lib/downloads_cleaner"
 
 class TestFileSizeFormatter < Minitest::Test
   def test_parse_size_with_gb
@@ -32,7 +32,7 @@ class TestFileSizeFormatter < Minitest::Test
     assert_raises(ArgumentError) do
       FileSizeFormatter.parse_size("invalid")
     end
-    
+
     assert_raises(ArgumentError) do
       FileSizeFormatter.parse_size("100XB")
     end

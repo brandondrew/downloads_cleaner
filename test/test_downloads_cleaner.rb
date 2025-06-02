@@ -1,6 +1,6 @@
 require 'minitest/autorun'
 require 'stringio'
-require_relative '../downloads_manager'
+require_relative "../lib/downloads_cleaner"
 
 class TestDownloadsCleaner < Minitest::Test
   class MockFileSystem
@@ -64,15 +64,18 @@ class TestDownloadsCleaner < Minitest::Test
   end
 
   def setup
+    @original_stdout = $stdout
+    $stdout = StringIO.new
+
     @mock_filesystem = MockFileSystem
     @mock_url_checker = MockUrlChecker
-    
-    @cleaner = DownloadsCleaner.new(
+
+    @cleaner = DownloadsCleaner::Cleaner.new(
       filesystem: @mock_filesystem,
       url_checker: @mock_url_checker,
       threshold: 50 * 1024 * 1024  # 50MB threshold for tests
     )
-    
+
     # Capture stdout for testing output
     @original_stdout = $stdout
     $stdout = StringIO.new
@@ -116,15 +119,15 @@ class TestDownloadsCleaner < Minitest::Test
   def test_find_large_files
     result = @cleaner.send(:find_large_files)
     assert_equal :continue, result
-    
+
     # Should find files above threshold (50MB in our test)
     assert_equal 2, @cleaner.large_files.length
-    
+
     # Verify first file
     assert_equal "/mock/downloads/large_file.dmg", @cleaner.large_files[0][:path]
     assert_equal "large_file.dmg", @cleaner.large_files[0][:name]
     assert_equal 150 * 1024 * 1024, @cleaner.large_files[0][:size]
-    
+
     # Verify second file
     assert_equal "/mock/downloads/medium_file.zip", @cleaner.large_files[1][:path]
     assert_equal "medium_file.zip", @cleaner.large_files[1][:name]
@@ -143,24 +146,20 @@ class TestDownloadsCleaner < Minitest::Test
   def test_extract_urls_from_plist_xml
     xml_data = '<plist><array><string>https://example.com/download1</string><string>https://example.com/download2</string></array></plist>'
     urls = @cleaner.send(:extract_urls_from_plist_xml, xml_data)
-    
+
     assert_equal 2, urls.length
     assert_includes urls, "https://example.com/download1"
     assert_includes urls, "https://example.com/download2"
   end
 
   def test_get_url_from_alternative_sources
-    # Mock the basename and file_exists? methods for this test
-    def @mock_filesystem.basename(path, ext = nil)
-      "file_with_url_file"
+    # Use temporary stubbing instead of monkey-patching
+    @mock_filesystem.stub :basename, "file_with_url_file" do
+      @mock_filesystem.stub :file_exists?, ->(path) { path.include?("file_with_url_file.url") } do
+        url = @cleaner.send(:get_url_from_alternative_sources, "/mock/downloads/file_with_url_file.dmg")
+        assert_equal "https://example.com/download", url
+      end
     end
-    
-    def @mock_filesystem.file_exists?(path)
-      path.include?("file_with_url_file.url")
-    end
-    
-    url = @cleaner.send(:get_url_from_alternative_sources, "/mock/downloads/file_with_url_file.dmg")
-    assert_equal "https://example.com/download", url
   end
 
   def test_generate_report_content
@@ -180,9 +179,9 @@ class TestDownloadsCleaner < Minitest::Test
         ]
       }
     ]
-    
+
     content = @cleaner.send(:generate_report_content, deleted_files)
-    
+
     # Verify content contains the expected information
     assert content.include?("# Retrievable Downloads")
     assert content.include?("## 1. test_file.dmg")
@@ -200,6 +199,8 @@ class TestDownloadsCleaner < Minitest::Test
     result = @cleaner.send(:display_retrievable_files)
     assert_equal :exit, result
     assert $stdout.string.include?("No large files found")
+    refute $stdout.string.include?("What would you like to do?"), "Should not prompt for deletion when no files are found"
+    refute $stdout.string.include?("Enter your choice"), "Should not prompt for choice when no files are found"
   end
 
   def test_display_retrievable_files_with_files
@@ -211,7 +212,7 @@ class TestDownloadsCleaner < Minitest::Test
         download_urls: [{ url: "https://example.com/test_file.dmg", accessible: true }]
       }
     ])
-    
+
     result = @cleaner.send(:display_retrievable_files)
     assert_equal :continue, result
     assert $stdout.string.include?("FILES THAT CAN BE DELETED AND RETRIEVED LATER")

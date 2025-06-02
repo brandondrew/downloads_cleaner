@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+require "downloads_cleaner"
+
+DownloadsCleaner::Cleaner.new.run

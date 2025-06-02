@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../downloads_manager'
+require_relative "../lib/downloads_cleaner.rb"
 require 'tempfile'
 require 'fileutils'
 
@@ -39,7 +39,7 @@ class TestFileSystem < Minitest::Test
     temp_file = Tempfile.new(["test", ".txt"], @temp_dir)
     path = temp_file.path
     temp_file.close
-    
+
     assert FileSystem.file_exists?(path)
     FileSystem.delete_file(path)
     assert !FileSystem.file_exists?(path)
@@ -51,11 +51,11 @@ class TestFileSystem < Minitest::Test
     file2 = File.join(@temp_dir, "file2.txt")
     File.write(file1, "content1")
     File.write(file2, "content2")
-    
+
     # Create a subdirectory (should not be returned)
     subdir = File.join(@temp_dir, "subdir")
     Dir.mkdir(subdir)
-    
+
     files = FileSystem.get_files_in_directory(@temp_dir)
     assert_includes files, file1
     assert_includes files, file2
@@ -71,10 +71,10 @@ class TestFileSystem < Minitest::Test
   def test_write_and_read_file
     test_content = "This is test content for write/read test"
     test_file = File.join(@temp_dir, "write_read_test.txt")
-    
+
     FileSystem.write_file(test_file, test_content)
     assert FileSystem.file_exists?(test_file)
-    
+
     content = FileSystem.read_file(test_file)
     assert_equal test_content, content
   end

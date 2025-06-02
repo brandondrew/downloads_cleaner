@@ -1,6 +1,6 @@
 require 'minitest/autorun'
 require 'webmock/minitest'
-require_relative '../downloads_manager'
+require_relative "../lib/downloads_cleaner"
 
 class TestUrlChecker < Minitest::Test
   def setup
@@ -15,7 +15,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a successful HTTP response
     stub_request(:head, "https://example.com/")
       .to_return(status: 200, body: "", headers: {})
-    
+
     assert UrlChecker.accessible?("https://example.com")
   end
 
@@ -23,7 +23,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a redirect HTTP response (3xx is considered accessible)
     stub_request(:head, "https://example.com/redirect")
       .to_return(status: 302, body: "", headers: { 'Location' => 'https://example.com/new-location' })
-    
+
     assert UrlChecker.accessible?("https://example.com/redirect")
   end
 
@@ -31,7 +31,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a 404 response
     stub_request(:head, "https://example.com/not-found")
       .to_return(status: 404, body: "", headers: {})
-    
+
     refute UrlChecker.accessible?("https://example.com/not-found")
   end
 
@@ -39,7 +39,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a 500 response
     stub_request(:head, "https://example.com/server-error")
       .to_return(status: 500, body: "", headers: {})
-    
+
     refute UrlChecker.accessible?("https://example.com/server-error")
   end
 
@@ -47,7 +47,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a timeout
     stub_request(:head, "https://example.com/timeout")
       .to_timeout
-    
+
     refute UrlChecker.accessible?("https://example.com/timeout")
   end
 
@@ -55,7 +55,7 @@ class TestUrlChecker < Minitest::Test
     # Mock a connection refused error
     stub_request(:head, "https://example.com/connection-refused")
       .to_raise(Errno::ECONNREFUSED)
-    
+
     refute UrlChecker.accessible?("https://example.com/connection-refused")
   end
 
