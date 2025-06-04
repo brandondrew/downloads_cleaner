@@ -1,0 +1,14 @@
+
+
+
+PROJECT_ROOT="${PWD}"
+
+function rebuild() {
+  (
+    cd $PROJECT_ROOT
+    gem uninstall downloads_cleaner --all --executables --ignore-dependencies --force
+    rm downloads_cleaner-*.gem
+    gem build downloads_cleaner.gemspec
+    gem install downloads_cleaner-*.gem --no-document
+  )
+}

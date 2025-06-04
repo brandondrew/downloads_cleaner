@@ -6,6 +6,9 @@ All notable changes to this project are expected to be documented in this file, 
 
 ## [Unreleased]
 
+### Added
+- Project file for project-specific aliases, functions, environment variables, etc.
+
 ---
 
 ## [0.2.0] - 2025-06-04
