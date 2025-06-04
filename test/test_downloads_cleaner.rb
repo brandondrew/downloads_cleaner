@@ -1,6 +1,4 @@
-require 'minitest/autorun'
-require 'stringio'
-require_relative "../lib/downloads_cleaner"
+require_relative 'test_helper'
 
 class TestDownloadsCleaner < Minitest::Test
   class MockFileSystem
@@ -60,6 +58,22 @@ class TestDownloadsCleaner < Minitest::Test
   class MockUrlChecker
     def self.accessible?(url)
       !url.include?("inaccessible")
+    end
+
+    def self.check_url(url)
+      {
+        accessible: !url.include?("inaccessible"),
+        url_type: url.include?(".dmg") || url.include?(".zip") ? "file" : "site"
+      }
+    end
+    
+    # Add instance methods that mirror the class methods
+    def accessible?(url)
+      self.class.accessible?(url)
+    end
+
+    def check_url(url)
+      self.class.check_url(url)
     end
   end
 
@@ -156,8 +170,10 @@ class TestDownloadsCleaner < Minitest::Test
     # Use temporary stubbing instead of monkey-patching
     @mock_filesystem.stub :basename, "file_with_url_file" do
       @mock_filesystem.stub :file_exists?, ->(path) { path.include?("file_with_url_file.url") } do
-        url = @cleaner.send(:get_url_from_alternative_sources, "/mock/downloads/file_with_url_file.dmg")
-        assert_equal "https://example.com/download", url
+        result = @cleaner.send(:get_url_from_alternative_sources, "/mock/downloads/file_with_url_file.dmg")
+        assert_equal "https://example.com/download", result[:url]
+        assert_equal true, result[:accessible]
+        assert_equal "site", result[:url_type]
       end
     end
   end
@@ -168,14 +184,14 @@ class TestDownloadsCleaner < Minitest::Test
       {
         name: "test_file.dmg",
         size: 100 * 1024 * 1024,
-        download_urls: [{ url: "https://example.com/test_file.dmg", accessible: true }]
+        download_urls: [{ url: "https://example.com/test_file.dmg", accessible: true, url_type: "file" }]
       },
       {
         name: "another_file.zip",
         size: 50 * 1024 * 1024,
         download_urls: [
-          { url: "https://example.com/another_file.zip", accessible: true },
-          { url: "https://mirror.example.com/another_file.zip", accessible: false }
+          { url: "https://example.com/another_file.zip", accessible: true, url_type: "file" },
+          { url: "https://mirror.example.com/another_file.zip", accessible: false, url_type: "file" }
         ]
       }
     ]
@@ -186,11 +202,13 @@ class TestDownloadsCleaner < Minitest::Test
     assert content.include?("# Retrievable Downloads")
     assert content.include?("## 1. test_file.dmg")
     assert content.include?("- **Size**: 100.0MB")
-    assert content.include?("- **URL**: https://example.com/test_file.dmg (accessible)")
+    assert content.include?("https://example.com/test_file.dmg (accessible")
     assert content.include?("## 2. another_file.zip")
     assert content.include?("- **Size**: 50.0MB")
-    assert content.include?("  1. https://example.com/another_file.zip (accessible)")
-    assert content.include?("  2. https://mirror.example.com/another_file.zip (not accessible)")
+    assert content.include?("https://example.com/another_file.zip (accessible")
+    assert content.include?("https://mirror.example.com/another_file.zip (not accessible")
+    
+    # Verify we have the summary information too
     assert content.include?("**Total space freed**: 150.0MB")
     assert content.include?("**Files deleted**: 2")
   end

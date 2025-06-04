@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "database"
+require "digest"
+
 module DownloadsCleaner
   # Main class that handles finding and cleaning up large downloadable files
   class Cleaner
@@ -17,6 +20,7 @@ module DownloadsCleaner
       @retrievable_files = []
       @filesystem = @options.delete(:filesystem)
       @url_checker = @options.delete(:url_checker)
+      @database = Database.new
     end
 
     def run(args = ARGV)
@@ -130,8 +134,7 @@ module DownloadsCleaner
       if urls.empty?
         alt_url = get_url_from_alternative_sources(file_path)
         if alt_url
-          accessible = @url_checker.accessible?(alt_url)
-          urls << { url: alt_url, accessible: accessible }
+          urls << alt_url
         end
       end
 
@@ -161,8 +164,14 @@ module DownloadsCleaner
 
                 # Add all found URLs with accessibility status
                 found_urls.each do |url|
-                  accessible = @url_checker.accessible?(url)
-                  urls << { url: url, accessible: accessible }
+                  check_result = @url_checker.check_url(url)
+                  urls << { 
+                    url: url, 
+                    accessible: check_result[:accessible], 
+                    url_type: check_result[:url_type],
+                    etag: check_result[:etag],
+                    last_modified: check_result[:last_modified]
+                  }
                 end
               end
             end
@@ -200,7 +209,17 @@ module DownloadsCleaner
       if @filesystem.file_exists?(url_file)
         content = @filesystem.read_file(url_file)
         url_match = content.match(/URL=(.+)/)
-        return url_match[1].strip if url_match
+        if url_match
+          url = url_match[1].strip
+          check_result = @url_checker.check_url(url)
+          return { 
+            url: url, 
+            accessible: check_result[:accessible], 
+            url_type: check_result[:url_type],
+            etag: check_result[:etag],
+            last_modified: check_result[:last_modified]
+          }
+        end
       end
 
       nil
@@ -222,17 +241,81 @@ module DownloadsCleaner
         total_size += file_info[:size]
         puts "#{index + 1}. #{file_info[:name]}"
         puts "   Size: #{FileSizeFormatter.format_size(file_info[:size])}"
+        
+        # Check if we have a local MD5 hash for this file
+        local_md5 = nil
+        begin
+          if @filesystem.file_exists?(file_info[:path])
+            local_md5 = Digest::MD5.file(file_info[:path]).hexdigest
+            file_info[:md5] = local_md5
+          end
+        rescue StandardError => e
+          puts "Warning: Could not compute MD5 for #{file_info[:name]}: #{e.message}"
+        end
 
-        # Display all URLs with their accessibility status
+        # Display all URLs with their accessibility status and type
         if file_info[:download_urls].length == 1
           url_info = file_info[:download_urls].first
           status = url_info[:accessible] ? "✅" : "⚠️"
-          puts "   URL: #{url_info[:url]} #{status}"
+          type_indicator = url_info[:url_type] == "file" ? "📁" : "🌐"
+          
+          # Compare remote and local versions if we have MD5
+          version_status = ""
+          if local_md5 && url_info[:accessible]
+            comparison = if @url_checker.respond_to?(:compare_with_local)
+              @url_checker.compare_with_local(url_info[:url], local_md5)
+            else
+              { changed: true, comparison_method: :none, details: 'compare_with_local not implemented' }
+            end
+            case comparison[:comparison_method]
+            when :etag_md5
+              version_status = comparison[:changed] ? " 🔄 Remote file differs from local" : " 🔒 Remote file matches local"
+            when :etag_unknown
+              version_status = " 🟡 ETag present but not MD5 (cannot verify exact match)"
+            when :last_modified
+              # Try to compare last-modified to local mtime
+              if url_info[:last_modified]
+                begin
+                  remote_time = Time.httpdate(url_info[:last_modified]) rescue nil
+                  local_time = @filesystem.file_mtime(file_info[:path]) rescue nil
+                  if remote_time && local_time && remote_time.to_i == local_time.to_i
+                    version_status = " 🕒 Likely matches local (last-modified)"
+                  else
+                    version_status = " 🔄 Remote file likely changed (last-modified mismatch)"
+                  end
+                rescue => e
+                  version_status = " 🟡 Could not compare last-modified: #{e.message}"
+                end
+              else
+                version_status = " 🟡 Last-Modified header present but not parsed"
+              end
+            when :none
+              version_status = " 🟡 No remote version info available"
+            else
+              version_status = comparison[:changed] ? " 🔄 Remote file differs from local" : " 🔒 Remote file matches local"
+            end
+          end
+          
+          puts "   URL: #{url_info[:url]} #{status} #{type_indicator}#{version_status}"
+          puts "     (🕒 means last-modified matches your local file's mtime; this is a heuristic, not a guarantee)" if version_status.include?("🕒")
         else
           puts "   URLs:"
           file_info[:download_urls].each_with_index do |url_info, url_index|
             status = url_info[:accessible] ? "✅" : "⚠️"
-            puts "     #{url_index + 1}. #{url_info[:url]} #{status}"
+            type_indicator = url_info[:url_type] == "file" ? "📁" : "🌐"
+            
+            # Compare remote and local versions if we have MD5
+            version_status = ""
+            if local_md5 && url_info[:accessible]
+              comparison = @url_checker.compare_with_local(url_info[:url], local_md5)
+              if comparison[:changed]
+                version_status = " 🔄 Remote file differs from local"
+              else
+                version_status = " 🔒 Remote file matches local"
+              end
+            end
+            
+            puts "     #{url_index + 1}. #{url_info[:url]} #{status} #{type_indicator}#{version_status}"
           end
         end
         puts
@@ -262,7 +345,8 @@ module DownloadsCleaner
       puts "3. Delete none (exit)"
 
       print "\nEnter your choice (1-3): "
-      choice = $stdin.gets.chomp
+      input = $stdin.gets
+      choice = input ? input.chomp : "3"
 
       case choice
       when "1"
@@ -281,6 +365,21 @@ module DownloadsCleaner
 
     def delete_all_files
       deleted_files = @retrievable_files.dup
+
+      # Compute MD5 hashes before deleting files
+      puts "\nComputing file hashes..."
+      deleted_files.each do |file_info|
+        begin
+          if @filesystem.file_exists?(file_info[:path])
+            file_info[:md5] = Digest::MD5.file(file_info[:path]).hexdigest
+          else
+            file_info[:md5] = ""
+          end
+        rescue => e
+          puts "Warning: Could not compute MD5 for #{file_info[:name]}: #{e.message}"
+          file_info[:md5] = ""
+        end
+      end
 
       puts "\nDeleting all retrievable files..."
       @retrievable_files.each do |file_info|
@@ -302,22 +401,79 @@ module DownloadsCleaner
         puts "\n" + "-" * 60
         puts "File: #{file_info[:name]}"
         puts "Size: #{FileSizeFormatter.format_size(file_info[:size])}"
+        
+        # If MD5 hasn't been computed yet, do it now
+        local_md5 = nil
+        if !file_info[:md5]
+          begin
+            if @filesystem.file_exists?(file_info[:path])
+              local_md5 = Digest::MD5.file(file_info[:path]).hexdigest
+              file_info[:md5] = local_md5
+            end
+          rescue StandardError => e
+            puts "Warning: Could not compute MD5 for #{file_info[:name]}: #{e.message}"
+          end
+        else
+          local_md5 = file_info[:md5]
+        end
+        
         if file_info[:download_urls].length == 1
           url_info = file_info[:download_urls].first
           status = url_info[:accessible] ? "✅" : "⚠️"
-          puts "URL:  #{url_info[:url]} #{status}"
+          
+          # Compare remote and local versions if we have MD5
+          version_status = ""
+          if local_md5 && url_info[:accessible]
+            comparison = if @url_checker.respond_to?(:compare_with_local)
+              @url_checker.compare_with_local(url_info[:url], local_md5)
+            else
+              { changed: true, comparison_method: :none, details: 'compare_with_local not implemented' }
+            end
+            if comparison[:changed]
+              version_status = " 🔄 Remote file differs from local"
+            else
+              version_status = " 🔒 Remote file matches local"
+            end
+          end
+          
+          puts "URL:  #{url_info[:url]} #{status}#{version_status}"
         else
           puts "URLs:"
           file_info[:download_urls].each_with_index do |url_info, idx|
             status = url_info[:accessible] ? "✅" : "⚠️"
-            puts "      #{idx + 1}. #{url_info[:url]} #{status}"
+            
+            # Compare remote and local versions if we have MD5
+            version_status = ""
+            if local_md5 && url_info[:accessible]
+              comparison = @url_checker.compare_with_local(url_info[:url], local_md5)
+              if comparison[:changed]
+                version_status = " 🔄 Remote file differs from local"
+              else
+                version_status = " 🔒 Remote file matches local"
+              end
+            end
+            
+            puts "      #{idx + 1}. #{url_info[:url]} #{status}#{version_status}"
           end
         end
 
         print "Delete this file? (y/N): "
-        response = $stdin.gets.chomp.downcase
+        input = $stdin.gets
+        response = input ? input.chomp.downcase : "n"
 
         if %w[y yes].include?(response)
+          # Compute MD5 hash before deleting
+          begin
+            if @filesystem.file_exists?(file_info[:path])
+              file_info[:md5] = Digest::MD5.file(file_info[:path]).hexdigest
+            else
+              file_info[:md5] = ""
+            end
+          rescue => e
+            puts "Warning: Could not compute MD5 for #{file_info[:name]}: #{e.message}"
+            file_info[:md5] = ""
+          end
+
           @filesystem.delete_file(file_info[:path])
           deleted_files << file_info
           puts "🗑 Deleted #{file_info[:name]}"
@@ -340,6 +496,29 @@ module DownloadsCleaner
     def save_deleted_files_list(deleted_files)
       return if deleted_files.empty?
 
+      DownloadsCleaner::Database.migrate! # Ensure DB is ready
+
+      deleted_files.each do |file|
+        # Use the pre-computed MD5 hash
+        md5 = file[:md5] || ""
+
+        file_id = DownloadsCleaner::Database.insert_deleted_file(
+          name: file[:name],
+          path: file[:path],
+          size: file[:size],
+          md5: md5,
+          deleted_at: Time.now.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        
+        file[:download_urls].each do |url_info|
+          DownloadsCleaner::Database.insert_download_url(
+            { url: url_info[:url], accessible: url_info[:accessible], url_type: url_info[:url_type] },
+            file_id,
+            md5
+          )
+        end
+      end
+
       timestamp = Time.now.strftime("%Y%m%d_%H%M%S")
       filename = File.expand_path("~/Downloads/retrievable_downloads.#{timestamp}.md")
 
@@ -347,6 +526,7 @@ module DownloadsCleaner
       @filesystem.write_file(filename, content)
 
       puts "Saved URLs to: #{filename}"
+      puts "Data also saved to SQLite database at: #{DownloadsCleaner::Database.db_path}"
     end
 
     def generate_report_content(deleted_files)
@@ -363,12 +543,14 @@ module DownloadsCleaner
         if file_info[:download_urls].length == 1
           url_info = file_info[:download_urls].first
           status = url_info[:accessible] ? "accessible" : "not accessible"
-          content << "- **URL**: #{url_info[:url]} (#{status})"
+          type = url_info[:url_type] == "file" ? "direct file" : "site"
+          content << "- **URL**: #{url_info[:url]} (#{status}, #{type})"
         else
           content << "- **URLs**:"
           file_info[:download_urls].each_with_index do |url_info, idx|
             status = url_info[:accessible] ? "accessible" : "not accessible"
-            content << "  #{idx + 1}. #{url_info[:url]} (#{status})"
+            type = url_info[:url_type] == "file" ? "direct file" : "site"
+            content << "  #{idx + 1}. #{url_info[:url]} (#{status}, #{type})"
           end
         end
         content << "- **Deleted**: #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}"

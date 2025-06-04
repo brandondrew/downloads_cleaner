@@ -1,7 +1,8 @@
 PATH
   remote: .
   specs:
-    downloads_cleaner (0.1.0)
+    downloads_cleaner (0.1.2)
+      sqlite3 (~> 2.6)
 
 GEM
   remote: https://rubygems.org/
@@ -15,15 +16,16 @@ GEM
       minitest (>= 5.0)
       ruby-progressbar
     ruby-progressbar (1.13.0)
+    sqlite3 (2.6.0-arm64-darwin)
 
 PLATFORMS
   arm64-darwin-23
-  ruby
+  arm64-darwin-24
 
 DEPENDENCIES
   downloads_cleaner!
-  minitest
-  minitest-reporters
+  minitest (~> 5.0)
+  minitest-reporters (~> 1.0)
 
 BUNDLED WITH
    2.6.9

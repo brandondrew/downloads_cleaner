@@ -19,6 +19,10 @@ module DownloadsCleaner
       File.size(path)
     end
 
+    def self.file_mtime(path)
+      File.mtime(path)
+    end
+
     def self.delete_file(path)
       File.delete(path)
     end

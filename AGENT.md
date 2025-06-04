@@ -39,6 +39,9 @@
 - Class methods for utility classes (e.g., `FileSystem.downloads_path`)
 - Two-space indentation, snake_case for methods/variables
 - Use double quotes for strings unless single quotes avoid escaping
+- Always follow proper Ruby indentation rules, where indentation follows scope.  Never indent simply for method calls.  Never indent more than 2 spaces to align the beginning of the line with something else above it.  Never use a hanging-indent style that looks like Python.
+- Whenever possible, align equals signs with the equals sign on the line above and below.  (Aligning equals signs is not the same as indentation.  Indentation is exclusively concerned with the beginning of the line.)
+
 
 ## Testing
 - Framework: Minitest with `minitest/autorun` and colored output via `minitest-reporters`

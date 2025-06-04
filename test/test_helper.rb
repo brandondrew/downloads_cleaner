@@ -135,8 +135,26 @@ module Mocks
   end
 end
 
+# Reset database after each test and ensure we're using a clean database 
+# for each test to avoid pollution
+class Minitest::Test
+  def before_setup
+    super
+    # Use in-memory database by default
+    DownloadsCleaner::Database.test_db_path = ":memory:"
+    DownloadsCleaner::Database.reset_connection!
+  end
+  
+  def after_teardown
+    # Close any open database connections
+    DownloadsCleaner::Database.reset_connection!
+    super
+  end
+end
+
 # Initialize mock state before each test
 Minitest.after_run do
   Mocks::MockFileSystem.reset!
   Mocks::MockUrlChecker.reset!
+  DownloadsCleaner::Database.reset_connection!
 end

@@ -18,10 +18,12 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
 
-  spec.files         = Dir.glob("{bin,lib}/**/*") + %w[LICENSE.txt README.md]
+  spec.files         = Dir.glob("{bin,lib,test}/**/*") + %w[LICENSE.txt README.md Rakefile]
   spec.bindir        = "bin"
   spec.executables   = ["downloads_cleaner"]
   spec.require_paths = ["lib"]
-  spec.add_development_dependency "minitest"
-  spec.add_development_dependency "minitest-reporters"
+  spec.add_dependency "sqlite3", "~> 2.6"
+  
+  spec.add_development_dependency "minitest", "~> 5.0"
+  spec.add_development_dependency "minitest-reporters", "~> 1.0"
 end
