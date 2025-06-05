@@ -8,6 +8,13 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
+## [0.5.0] - 2025-06-05
+
+### Changed
+- Graceful exit supported on Control-C
+
+---
+
 ## [0.4.0] - 2025-06-05
 
 ### Added
@@ -61,7 +68,8 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
-[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.1.0...0.2.0

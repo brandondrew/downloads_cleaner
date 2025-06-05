@@ -1,5 +1,11 @@
 #!/usr/bin/env ruby
 
+# Handle Control-C gracefully
+Signal.trap('INT') do
+  puts "\nExiting Downloads Cleaner. Goodbye!"
+  exit(0)
+end
+
 require "downloads_cleaner"
 
 DownloadsCleaner::Cleaner.new.run
