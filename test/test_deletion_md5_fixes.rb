@@ -127,8 +127,8 @@ class TestDeletionMd5Fixes < Minitest::Test
             end
             mock_digest
           } do
-            # Simulate stdin input for choice "1" (delete all)
-            $stdin.stub :gets, "1\n" do
+            # Simulate stdin input for choice "d" (delete)
+            $stdin.stub :gets, "d\n" do
               capture_stdout do
                 result = @cleaner.send(:delete_all_files)
                 assert_equal :exit, result
@@ -170,8 +170,8 @@ class TestDeletionMd5Fixes < Minitest::Test
             end
             mock_digest
           } do
-            # Simulate stdin input: "y" to delete the file
-            inputs = ["y\n"]
+            # Simulate stdin input: "d" to delete the file
+            inputs = ["d\n"]
             input_index = 0
             
             $stdin.stub :gets, -> {

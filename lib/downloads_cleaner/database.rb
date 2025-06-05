@@ -78,6 +78,15 @@ module DownloadsCleaner
         )
       SQL
       
+      # Migration for preserved_files table
+      db.execute(<<-SQL)
+        CREATE TABLE IF NOT EXISTS preserved_files (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          path TEXT NOT NULL UNIQUE,
+          added_at TEXT NOT NULL
+        );
+      SQL
+      
       # Migrate existing download_urls table if needed
       migrate_download_urls_table!(db)
       
@@ -133,6 +142,30 @@ module DownloadsCleaner
       puts "Migration completed."
     rescue SQLite3::Exception => e
       puts "Warning: Migration failed (#{e.message}). This may be normal for new installations."
+    end
+
+    # Preserved files CRUD
+    def self.add_preserved_file(path)
+      db = connection
+      db.execute(
+        "INSERT OR IGNORE INTO preserved_files (path, added_at) VALUES (?, ?)",
+        [File.expand_path(path), Time.now.strftime("%Y-%m-%d %H:%M:%S")]
+      )
+    end
+
+    def self.preserved_file_exists?(path)
+      db = connection
+      !!db.get_first_value("SELECT 1 FROM preserved_files WHERE path = ?", [File.expand_path(path)])
+    end
+
+    def self.all_preserved_files
+      db = connection
+      db.execute("SELECT path FROM preserved_files").map { |row| row["path"] }
+    end
+
+    def self.remove_preserved_file(path)
+      db = connection
+      db.execute("DELETE FROM preserved_files WHERE path = ?", [File.expand_path(path)])
     end
 
     def self.insert_deleted_file(file_data)

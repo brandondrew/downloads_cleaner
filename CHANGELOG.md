@@ -8,6 +8,17 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
+## [0.4.0] - 2025-06-05
+
+### Added
+- **Preserved Files Feature:** Mark files as "preserved" so they are never offered for deletion.
+
+### Changed
+- **UX:**
+  - UI tweaked & improved in various ways.
+
+---
+
 ## [0.3.0] - 2025-06-04
 
 ### Added
@@ -50,7 +61,8 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
-[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/brandondrew/downloads_cleaner/tree/0.1.0

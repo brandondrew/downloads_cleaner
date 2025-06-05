@@ -1,6 +1,9 @@
 require_relative 'test_helper'
 
+require 'tmpdir'
+
 class TestDownloadsCleaner < Minitest::Test
+  TMP_PRESERVED = File.join(Dir.tmpdir, "downloads_cleaner_test_preserved.txt")
   class MockFileSystem
     def self.downloads_path
       "/mock/downloads"
@@ -84,10 +87,13 @@ class TestDownloadsCleaner < Minitest::Test
     @mock_filesystem = MockFileSystem
     @mock_url_checker = MockUrlChecker
 
+    # Clean up preserved list file for isolation
+    FileUtils.rm_f(TMP_PRESERVED)
     @cleaner = DownloadsCleaner::Cleaner.new(
       filesystem: @mock_filesystem,
       url_checker: @mock_url_checker,
-      threshold: 50 * 1024 * 1024  # 50MB threshold for tests
+      threshold: 50 * 1024 * 1024,  # 50MB threshold for tests
+      preserved_list_path: TMP_PRESERVED
     )
 
     # Capture stdout for testing output
@@ -146,6 +152,16 @@ class TestDownloadsCleaner < Minitest::Test
     assert_equal "/mock/downloads/medium_file.zip", @cleaner.large_files[1][:path]
     assert_equal "medium_file.zip", @cleaner.large_files[1][:name]
     assert_equal 80 * 1024 * 1024, @cleaner.large_files[1][:size]
+  end
+
+  def test_find_large_files_excludes_preserved
+    # Add a file to the preserved list
+    preserved_file = "/mock/downloads/large_file.dmg"
+    @cleaner.instance_variable_get(:@preserved_list).add(preserved_file)
+    @cleaner.send(:find_large_files)
+    # Only medium file should be found
+    assert_equal 1, @cleaner.large_files.length
+    assert_equal "/mock/downloads/medium_file.zip", @cleaner.large_files[0][:path]
   end
 
   def test_find_large_files_with_nonexistent_directory
@@ -236,5 +252,57 @@ class TestDownloadsCleaner < Minitest::Test
     assert $stdout.string.include?("FILES THAT CAN BE DELETED AND RETRIEVED LATER")
     assert $stdout.string.include?("1. test_file.dmg")
     assert $stdout.string.include?("Size: 100.0MB")
+  end
+
+  def test_delete_file_option_in_individual_delete
+    file_info = {
+      path: "/mock/downloads/large_file.dmg",
+      name: "large_file.dmg",
+      size: 150 * 1024 * 1024,
+      download_urls: [{ url: "https://example.com/large_file.dmg", accessible: true, url_type: "file" }]
+    }
+    @cleaner.instance_variable_set(:@retrievable_files, [file_info])
+    $stdin = StringIO.new("d\n")
+    @cleaner.send(:delete_files_individually)
+    # Since delete_file is mocked to return true, just check output
+    assert_match(/Deleted large_file.dmg/, $stdout.string)
+  ensure
+    $stdin = STDIN
+  end
+
+  def test_preserve_file_option_in_individual_delete
+    # Prepare a retrievable file
+    file_info = {
+      path: "/mock/downloads/large_file.dmg",
+      name: "large_file.dmg",
+      size: 150 * 1024 * 1024,
+      download_urls: [{ url: "https://example.com/large_file.dmg", accessible: true, url_type: "file" }]
+    }
+    @cleaner.instance_variable_set(:@retrievable_files, [file_info])
+    # Simulate user entering 'p' (preserve)
+    $stdin = StringIO.new("p\n")
+    @cleaner.send(:delete_files_individually)
+    preserved_list = @cleaner.instance_variable_get(:@preserved_list)
+    assert preserved_list.include?("/mock/downloads/large_file.dmg"), "File should be preserved"
+  ensure
+    $stdin = STDIN
+  end
+
+  def test_keep_file_option_in_individual_delete
+    # Prepare a retrievable file
+    file_info = {
+      path: "/mock/downloads/large_file.dmg",
+      name: "large_file.dmg",
+      size: 150 * 1024 * 1024,
+      download_urls: [{ url: "https://example.com/large_file.dmg", accessible: true, url_type: "file" }]
+    }
+    @cleaner.instance_variable_set(:@retrievable_files, [file_info])
+    # Simulate user entering 'k' (keep)
+    $stdin = StringIO.new("k\n")
+    @cleaner.send(:delete_files_individually)
+    preserved_list = @cleaner.instance_variable_get(:@preserved_list)
+    refute preserved_list.include?("/mock/downloads/large_file.dmg"), "File should not be preserved"
+  ensure
+    $stdin = STDIN
   end
 end

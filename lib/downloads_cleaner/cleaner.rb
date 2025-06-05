@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "database"
+require_relative "preserved_list"
 require "digest"
 
 module DownloadsCleaner
@@ -21,6 +22,8 @@ module DownloadsCleaner
       @filesystem = @options.delete(:filesystem)
       @url_checker = @options.delete(:url_checker)
       @database = Database.new
+      preserved_list_path = @options.delete(:preserved_list_path)
+      @preserved_list = PreservedList.new(preserved_list_path)
     end
 
     def run(args = ARGV)
@@ -86,9 +89,12 @@ module DownloadsCleaner
 
       puts "Scanning #{downloads_path} for large files..."
 
+      preserved_files = @preserved_list.files
+
       @filesystem.get_files_in_directory(downloads_path).each do |file_path|
         file_size = @filesystem.file_size(file_path)
         next unless file_size > @options[:threshold]
+        next if preserved_files.include?(File.expand_path(file_path))
 
         @large_files << {
           path: file_path,
@@ -97,7 +103,7 @@ module DownloadsCleaner
         }
       end
 
-      puts "Found #{@large_files.length} files above threshold"
+      puts "Found #{@large_files.length} files above threshold (excluding preserved files)"
       :continue
     end
 
@@ -339,27 +345,38 @@ module DownloadsCleaner
     end
 
     def prompt_for_deletion
+      total = @retrievable_files.size
       puts "\nWhat would you like to do?"
-      puts "1. Delete all files listed above"
-      puts "2. Choose files individually"
-      puts "3. Delete none (exit)"
-
-      print "\nEnter your choice (1-3): "
-      input = $stdin.gets
-      choice = input ? input.chomp : "3"
-
-      case choice
-      when "1"
-        delete_all_files
-      when "2"
-        delete_files_individually
-      when "3"
-        puts "\nNo files deleted. Have a great day! 👋"
-        return :exit
+      if total == 1
+        file_name = @retrievable_files.first[:name]
+        puts "0. Delete zero files and exit"
+        puts "1. Delete #{file_name}"
+        print "\nEnter your choice (0-1): "
+        input = $stdin.gets
+        choice = input ? input.chomp.strip : "0"
+        case choice
+        when "1"
+          delete_all_files
+        else
+          puts "\nNo files deleted. Have a great day! 👋"
+          return :exit
+        end
       else
-        puts "Invalid choice. Exiting without deleting anything."
-        puts "Have a great day! 👋"
-        return :exit
+        puts "0. Delete zero files and exit"
+        puts "1. Choose files one-by-one"
+        puts "#{total}. Delete all files listed above"
+        print "\nEnter your choice (0, 1, or #{total}): "
+        input = $stdin.gets
+        choice = input ? input.chomp.strip : "0"
+        case choice
+        when "1"
+          delete_files_individually
+        when total.to_s
+          delete_all_files
+        else
+          puts "\nNo files deleted. Have a great day! 👋"
+          return :exit
+        end
       end
     end
 
@@ -457,11 +474,16 @@ module DownloadsCleaner
           end
         end
 
-        print "Delete this file? (y/N): "
+        puts "Options:"
+        puts "  D. Delete this file"
+        puts "  K. Keep this file"
+        puts "  P. Preserve this file (never offer for deletion again)"
+        print "Enter your choice ([D]elete/[K]eep/[P]reserve, default K): "
         input = $stdin.gets
-        response = input ? input.chomp.downcase : "n"
+        response = input ? input.chomp.strip.downcase : "k"
 
-        if %w[y yes].include?(response)
+        case response
+        when "d"
           # Compute MD5 hash before deleting
           begin
             if @filesystem.file_exists?(file_info[:path])
@@ -477,6 +499,9 @@ module DownloadsCleaner
           @filesystem.delete_file(file_info[:path])
           deleted_files << file_info
           puts "🗑 Deleted #{file_info[:name]}"
+        when "p"
+          preserve_file(file_info[:path])
+          puts "💾 Preserved #{file_info[:name]} (will not be offered for deletion again)"
         else
           puts "✅ Kept #{file_info[:name]}"
         end
@@ -563,6 +588,9 @@ module DownloadsCleaner
       content << "**Files deleted**: #{deleted_files.length}"
 
       content.join("\n")
+    end
+    def preserve_file(file_path)
+      @preserved_list.add(file_path)
     end
   end
 end
