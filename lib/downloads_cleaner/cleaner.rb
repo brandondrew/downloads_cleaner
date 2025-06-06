@@ -10,11 +10,14 @@ module DownloadsCleaner
     attr_reader :large_files, :retrievable_files, :options
 
     def initialize(options = {})
+      require_relative 'config'
+      @config = DownloadsCleaner::Config.new
       @options = {
-        threshold: 100 * 1024 * 1024, # 100MB default
+        threshold: @config.default_size_threshold, # Use config default if not overridden
         mode: :prompt,
         filesystem: FileSystem,
-        url_checker: UrlChecker
+        url_checker: UrlChecker,
+        downloads_directory: @config.downloads_directory
       }.merge(options)
 
       @large_files = []
@@ -80,7 +83,7 @@ module DownloadsCleaner
     end
 
     def find_large_files
-      downloads_path = @filesystem.downloads_path
+      downloads_path = @options[:downloads_directory] || @filesystem.downloads_path
 
       unless @filesystem.directory_exists?(downloads_path)
         puts "Downloads folder not found at #{downloads_path}"

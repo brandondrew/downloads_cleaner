@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Main entry point for the Downloads Cleaner gem
 require "optparse"
 require "fileutils"
@@ -7,6 +9,7 @@ require "json"
 require "time"
 require "tempfile"
 
+require_relative 'downloads_cleaner/config'
 require_relative "downloads_cleaner/version"
 require_relative "downloads_cleaner/file_size_formatter"
 require_relative "downloads_cleaner/file_system"

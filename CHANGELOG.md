@@ -8,6 +8,18 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
+## [0.6.0] - 2025-06-05
+
+### Added
+- **User Configuration**
+  - A configuration file is now located at `${CLEANER_HOME:-$HOME/.config/downloads_cleaner}/config.yaml` and is auto-created on startup if missing.
+  - The configuration file keys include:
+    - `database_file` (default: `files.db`)
+    - `downloads_directory` (default: `~/Downloads`)
+    - `default_size_threshold` (default: `100MB`, accepts values like `1GB`, `500kB`)
+
+---
+
 ## [0.5.0] - 2025-06-05
 
 ### Changed
@@ -68,7 +80,8 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
-[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.2.0...0.3.0

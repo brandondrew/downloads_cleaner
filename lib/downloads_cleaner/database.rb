@@ -11,11 +11,16 @@ module DownloadsCleaner
     def self.db_path
       # Allow tests to override the database path
       return test_db_path if test_db_path
-      
-      # Normal production path
-      home = ENV["CLEANER_HOME"] || File.expand_path("~/.config/downloads_cleaner")
-      FileUtils.mkdir_p(home)
-      File.join(home, "files.db")
+
+      require_relative 'config'
+      config = DownloadsCleaner::Config.new
+      db_path = if Pathname.new(config.database_file).absolute?
+        config.database_file
+      else
+        File.join(File.dirname(config.instance_variable_get(:@config_path)), config.database_file)
+      end
+      FileUtils.mkdir_p(File.dirname(db_path))
+      db_path
     end
 
     def self.connection
