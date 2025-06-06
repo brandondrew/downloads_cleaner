@@ -8,6 +8,15 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
+## [0.7.0] - 2025-06-05
+
+### Added
+- **macOS Download Link Replacement Feature:**
+  - Replaces deleted downloaded files on macOS with clickable `.webloc` link files pointing to the original download URLs.
+  - Configuration options and CLI flags added for download link feature.
+
+---
+
 ## [0.6.0] - 2025-06-05
 
 ### Added
@@ -80,7 +89,8 @@ All notable changes to this project are expected to be documented in this file, 
 
 ---
 
-[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.6.0...HEAD
+[Unreleased]: https://github.com/brandondrew/downloads_cleaner/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/brandondrew/downloads_cleaner/compare/0.3.0...0.4.0

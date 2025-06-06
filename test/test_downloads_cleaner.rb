@@ -305,4 +305,51 @@ class TestDownloadsCleaner < Minitest::Test
   ensure
     $stdin = STDIN
   end
+
+  def test_webloc_creation_enabled
+    @cleaner.options[:replace_with_link] = true
+    @cleaner.options[:downloads_directory] = "/mock/downloads"
+    file_info = {
+      path: "/mock/downloads/large_file.dmg",
+      name: "large_file.dmg",
+      size: 150 * 1024 * 1024,
+      download_urls: [{ url: "https://example.com/large_file.dmg", accessible: true, url_type: "file" }]
+    }
+    @cleaner.instance_variable_set(:@retrievable_files, [file_info])
+    @mock_filesystem.stub :file_exists?, true do
+      @mock_filesystem.stub :get_files_in_directory, ["/mock/downloads/large_file.dmg"] do
+        @mock_filesystem.stub :read_file, "URL=https://example.com/download" do
+          @cleaner.send(:delete_all_files)
+          assert @mock_filesystem.file_exists?("/mock/downloads/large_file.dmg.webloc"), "Webloc file should be created."
+          assert_equal "URL=https://example.com/download", @mock_filesystem.read_file("/mock/downloads/large_file.dmg.webloc")
+        end
+      end
+    end
+  end
+
+  def test_webloc_creation_disabled
+    opts = {
+      replace_with_link: false,
+      downloads_directory: "/mock/downloads"
+    }
+    cleaner = DownloadsCleaner::Cleaner.new(opts)
+    cleaner.instance_variable_set(:@filesystem, @mock_filesystem)
+    file_info = {
+      path: "/mock/downloads/large_file.dmg",
+      name: "large_file.dmg",
+      size: 150 * 1024 * 1024,
+      download_urls: [{ url: "https://example.com/large_file.dmg", accessible: true, url_type: "file" }]
+    }
+    cleaner.instance_variable_set(:@retrievable_files, [file_info])
+    @mock_filesystem.stub :file_exists?, true do
+      @mock_filesystem.stub :get_files_in_directory, ["/mock/downloads/large_file.dmg"] do
+        @mock_filesystem.stub :read_file, "" do
+          DownloadsCleaner::WeblocWriter.stub(:write_webloc, ->(*args) { flunk(".webloc should not be created") }) do
+            cleaner.send(:delete_all_files)
+          end
+        end
+      end
+    end
+  end
+
 end
